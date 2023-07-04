@@ -1,0 +1,88 @@
+With the cat command you opened the default.conf - the nginx configuration file.
+
+Not gonna explain in detail, but essentially..
+
+location / {
+  root     /usr/share/nginx/html;
+  index    index.html index.htm;
+}
+
+..if you hit the root location, nginx looks in this given root folder for a index.html and thats what is displayed right now, when you look into your browser on 127.0.0.1
+Our goal now is to actually override this config file with our own.
+
+- first create a new folder at the root level "app"
+- inside of that create "public"
+- and inside of that create an index.php
+
+<?php
+echo 'Hello World';
+
+- next one to do is creating a nginx config file so that i can actually point it at the newly created index.php
+
+- so create again at root level a folder "nginx"
+- and try to mirror the folder structure that we saw in the server, so
+- inside of nginx we had a folder called "conf.d" 
+- and inside of that we had a file called default.conf
+
+
+Its a minimalistic config file and in production you probably point the path towards an alternative config file which contains more error handling etc.
+
+First of all: 
+Nginx is a bit different than Apache in that sense that i cant handle PHP processing directly! Thats why it relies on a separate PHP processor to handle PHP requests hence we use sth called:
+- PHP fpm 
+..which is a processor that is extensively tested to work with nginx.
+
+From top to bottom:
+- every key in this file is known as a directive and each directive is telling nginx to do sth
+- you could nest directives inside of other directives 
+- you could even have sibling directives so for example: you could have two different server directives here and the server will be chosen based upon what information nginx receives.
+
+- the server should listen on port 80
+- the server name here is localhost (or sth more being you: your_name.tech)
+- the root is the public folder of our app, so that the request should be directed in this folder and the index file is the index.php
+
+- the following location directives use "patterns", so: the first one will be selective, and only if the web address ends with .php, the directives inside of it gets executed.
+- the other location directive will catch any other addresses and the rule inside will actually see to it that it gets redirected to where we really want our traffic to go, that being our index file in our public root.
+
+Inside of the first location directive:
+- with: "fastcgi_pass app:9000" this directive defines the actual server to proxy to using fpm is fastcgi pass, basically this is the address and port of our PHP backend. (and this "app" comes from the docker-compose.yml, Docker uses the names of the services as host names!)
+- "fastcgi_index": again telling nginx which file to use as the index
+- "fastcgi_params": the primary method of passing extra information when using fpm is with parameters. So the background server should be configured to read and process these. In other words: a fastcgi_param is used to pass this extra info and this first part (REQUEST_METHOD) will tell the php backend what type of request it is (GET, POST, PUT,..)
+- and script_filename: is a combination of a path to the base directory and that is set by the root directive ($document_root$ - /app/public), and appended to this will be the URI followed by the value of the fastcgi_index directive (index.php)
+- these values which are prefixed with the dollar sign are variables which nginx knows the value of
+
+---
+
+We've now got our nginx configuration in place, but if i'd spin Docker now those changes wouldnt yet be recognized.
+In order to proof that:
+```sh
+docker compose up -d
+```
+
+- container is running, and in the browser we still have the welcome screen! (the original static html page)
+- the answer why we dont see the good old "Hello world" yet is in the docker-compose.yaml:
+- there is nothing in this webserver configuration that says look in an app folder and then inside a public folder for an index.php as configured in our default.conf! 
+
+- there is a way of copying your files and folders into the container!
+..and thats sth that we are going to look at in the future
+- but at the moment we're still working on our files and folders
+- for that reason we gonna use sth called a "volume mapping"
+- this mapping that we create is between the files and folders on our host system into the container
+- the way you create a volume mapping is much the same way as what we did with the ports (separated by a colon)
+- so under "services - web:" you create "volumes" which will take an array of mappings
+- and we want to map from (again "to" is symbolized by the colon):
+
+```sh
+./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+```
+
+- and then, in order to find this file at this location we are going to need to do a similar thing on our app, so under the app service you write again:
+
+```sh
+volumes:
+    - ./app:/app
+```
+
+..which means: app on our host machine will map to app in the root directory of the container.
+
+- then re-run docker-compose up, refresh the page in the browser and you should see good old "Hello world"
